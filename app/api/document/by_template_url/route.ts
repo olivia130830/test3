@@ -41,9 +41,12 @@
  
      // 上传到 Vercel Blob（public，直接返回 URL） 
      const safeName = encodeURIComponent((dataObj.姓名 || "unknown").toString()); 
-     const filename = `certs/${Date.now()}-${safeName}.bin`; 
+     const filename = `certs/${Date.now()}-${safeName}.docx`;
  
-     const blob = await put(filename, outBuf, { access: "public" }); 
+     const blob = await put(filename, outBuf, {
+        access: "public",
+        contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+     });
      return Response.json({ url: blob.url }, { status: 200 }); 
    } catch (e: any) { 
      return Response.json({ error: e?.message || String(e) }, { status: 500 }); 
