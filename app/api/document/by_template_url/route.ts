@@ -2,7 +2,15 @@
  import { put } from "@vercel/blob"; 
  
  export const runtime = "nodejs"; 
- 
+ let cachedTemplate: Buffer | null = null;
+
+async function getTemplate(url: string) {
+  if (cachedTemplate) return cachedTemplate;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`模板下载失败：${r.status}`);
+  cachedTemplate = Buffer.from(await r.arrayBuffer());
+  return cachedTemplate;
+}
  type CertData = { 姓名: string; 日期: string; 奖项: string }; 
  
  async function downloadAsBuffer(url: string): Promise<Buffer> { 
