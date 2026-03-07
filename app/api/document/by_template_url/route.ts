@@ -3,9 +3,6 @@ import { put } from "@vercel/blob";
 import { convertDocxToPdf } from "@/services/pdfConverter";
 import { convertDocxToImage } from "@/services/imageConverter";
 import { generateDocxBuffer, type DocumentData } from "@/services/docxTemplateService";
-import formidable from "formidable";
-import { Readable } from "stream";
-import fs from "fs";
 
 // 定义支持的格式类型
 type SupportedFormat = "docx" | "pdf" | "png" | "jpg" | "jpeg";
@@ -131,40 +128,13 @@ const formatHandlers: Record<SupportedFormat, FormatHandler> = {
 
 export async function POST(request: Request): Promise<NextResponse> {
   try {
-    // 创建一个可读流来模拟 IncomingMessage
-    const buffer = await request.arrayBuffer();
-    const readable = Readable.from(Buffer.from(buffer));
+    const formData = await request.formData();
 
-    // 添加必要属性，模拟 Node IncomingMessage
-    const mockRequest = Object.assign(readable, {
-      headers: Object.fromEntries(request.headers.entries()),
-      method: request.method,
-      url: request.url,
-      httpVersion: "1.1",
-      httpVersionMajor: 1,
-      httpVersionMinor: 1,
-      complete: true,
-      connection: null,
-      socket: null,
-      aborted: false,
-    }) as unknown as import("http").IncomingMessage;
+    const formatValue = formData.get("format");
+    const normalizedFormat = String(formatValue || "docx").toLowerCase() as SupportedFormat;
 
-    // 解析 multipart/form-data
-    const form = formidable({
-      multiples: false,
-      keepExtensions: true,
-      maxFileSize: 10 * 1024 * 1024,
-    });
-
-    const [fields, files] = await form.parse(mockRequest);
-
-    // 读取 format，默认 docx
-    const formatValue = Array.isArray(fields.format) ? fields.format[0] : fields.format;
-    const normalizedFormat = (formatValue || "docx").toLowerCase() as SupportedFormat;
-
-    // 读取 data
-    const dataString = Array.isArray(fields.data) ? fields.data[0] : fields.data;
-    if (!dataString || typeof dataString !== "string") {
+    const dataValue = formData.get("data");
+    if (!dataValue || typeof dataValue !== "string") {
       return NextResponse.json(
         { success: false, error: "缺少 data 参数" },
         { status: 400 }
@@ -173,7 +143,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     let data: DocumentData;
     try {
-      data = JSON.parse(dataString);
+      data = JSON.parse(dataValue);
     } catch {
       return NextResponse.json(
         { success: false, error: "data 参数格式错误，必须是有效的 JSON" },
@@ -181,16 +151,14 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    // 获取模板 Buffer：优先文件，其次 URL
     let templateBuffer: Buffer;
 
-    const templateFile = Array.isArray(files.template) ? files.template[0] : files.template;
-    if (templateFile) {
-      templateBuffer = await fs.promises.readFile(templateFile.filepath);
+    const templateFile = formData.get("template");
+    if (templateFile instanceof File) {
+      const ab = await templateFile.arrayBuffer();
+      templateBuffer = Buffer.from(ab);
     } else {
-      const templateField =
-        (Array.isArray(fields.template) ? fields.template[0] : fields.template) ||
-        (Array.isArray(fields.template_url) ? fields.template_url[0] : fields.template_url);
+      const templateField = formData.get("template_url") || formData.get("template");
 
       if (!templateField || typeof templateField !== "string") {
         return NextResponse.json(
@@ -202,7 +170,6 @@ export async function POST(request: Request): Promise<NextResponse> {
       templateBuffer = await downloadTemplateAsBuffer(templateField);
     }
 
-    // 检查格式是否支持
     if (!formatHandlers[normalizedFormat]) {
       return NextResponse.json(
         {
@@ -214,41 +181,36 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    // 生成 DOCX
     const docBuffer = await generateDocxBuffer(data, templateBuffer, "buffer");
-
-    // 根据 format 处理
     const handler = formatHandlers[normalizedFormat];
+    const processedBuffer = await handler.process(docBuffer);
+    const fileName = createFileName(normalizedFormat);
 
-    try {
-      const processedBuffer = await handler.process(docBuffer);
-      const fileName = createFileName(normalizedFormat);
-
-      const blob = await put(fileName, processedBuffer, {
-        access: "public",
-        contentType: handler.contentType,
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
-
-      return NextResponse.json({
-        success: true,
-        message: "文档生成成功",
-        file_url: blob.url,
-        file_name: fileName,
-        format: normalizedFormat,
-        content_type: handler.contentType,
-      });
-    } catch (error: any) {
-      console.error(`${normalizedFormat.toUpperCase()} 处理或上传失败:`, error);
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
       return NextResponse.json(
         {
           success: false,
-          error: `${normalizedFormat.toUpperCase()} 处理或上传失败`,
-          detail: error?.message || String(error),
+          error: "缺少 BLOB_READ_WRITE_TOKEN 环境变量",
         },
         { status: 500 }
       );
     }
+
+    const blob = await put(fileName, processedBuffer, {
+      access: "public",
+      contentType: handler.contentType,
+      token,
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "文档生成成功",
+      file_url: blob.url,
+      file_name: fileName,
+      format: normalizedFormat,
+      content_type: handler.contentType,
+    });
   } catch (error: any) {
     console.error("文档生成失败:", error);
     return NextResponse.json(
