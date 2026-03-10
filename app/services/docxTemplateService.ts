@@ -11,14 +11,16 @@ export async function generateDocxBuffer(
   output: string
 ): Promise<Buffer> {
   try {
-    const zip = new PizZip(template);
+    console.log("收到的 data =", data);
 
+    const zip = new PizZip(template);
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
     });
 
     doc.render(data);
+    console.log("模板变量替换完成");
 
     const buffer = doc.getZip().generate({
       type: "nodebuffer",
