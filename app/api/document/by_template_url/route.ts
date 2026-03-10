@@ -4,19 +4,14 @@ import { convertDocxToPdf } from "@/services/pdfConverter";
 import { convertDocxToImage } from "@/services/imageConverter";
 import { generateDocxBuffer, type DocumentData } from "@/services/docxTemplateService";
 
-// 定义支持的格式类型
 type SupportedFormat = "docx" | "pdf" | "png" | "jpg" | "jpeg";
 
-// 格式处理器接口
 interface FormatHandler {
   contentType: string;
   fileExtension: string;
   process: (docBuffer: Buffer) => Promise<Buffer>;
 }
 
-/**
- * 下载模板 URL 为 Buffer
- */
 async function downloadTemplateAsBuffer(url: string): Promise<Buffer> {
   let u: URL;
   try {
@@ -56,9 +51,6 @@ async function downloadTemplateAsBuffer(url: string): Promise<Buffer> {
   }
 }
 
-/**
- * 生成文件名
- */
 function createFileName(format: SupportedFormat): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -69,7 +61,6 @@ function createFileName(format: SupportedFormat): string {
   return `document_${timestamp}.${format}`;
 }
 
-// 格式处理器映射
 const formatHandlers: Record<SupportedFormat, FormatHandler> = {
   docx: {
     contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -80,48 +71,28 @@ const formatHandlers: Record<SupportedFormat, FormatHandler> = {
     contentType: "application/pdf",
     fileExtension: "pdf",
     process: async (docBuffer: Buffer) => {
-      try {
-        return await convertDocxToPdf(docBuffer);
-      } catch (error) {
-        console.error("PDF 转换失败:", error);
-        throw new Error("PDF 转换失败");
-      }
+      return await convertDocxToPdf(docBuffer);
     },
   },
   png: {
     contentType: "image/png",
     fileExtension: "png",
     process: async (docBuffer: Buffer) => {
-      try {
-        return await convertDocxToImage(docBuffer, "png");
-      } catch (error) {
-        console.error("PNG 转换失败:", error);
-        throw new Error("PNG 转换失败");
-      }
+      return await convertDocxToImage(docBuffer, "png");
     },
   },
   jpg: {
     contentType: "image/jpeg",
     fileExtension: "jpg",
     process: async (docBuffer: Buffer) => {
-      try {
-        return await convertDocxToImage(docBuffer, "jpg");
-      } catch (error) {
-        console.error("JPG 转换失败:", error);
-        throw new Error("JPG 转换失败");
-      }
+      return await convertDocxToImage(docBuffer, "jpg");
     },
   },
   jpeg: {
     contentType: "image/jpeg",
     fileExtension: "jpeg",
     process: async (docBuffer: Buffer) => {
-      try {
-        return await convertDocxToImage(docBuffer, "jpeg");
-      } catch (error) {
-        console.error("JPEG 转换失败:", error);
-        throw new Error("JPEG 转换失败");
-      }
+      return await convertDocxToImage(docBuffer, "jpeg");
     },
   },
 };
@@ -129,6 +100,7 @@ const formatHandlers: Record<SupportedFormat, FormatHandler> = {
 export async function POST(request: Request): Promise<NextResponse> {
   try {
     const formData = await request.formData();
+    const debugMode = String(formData.get("debug") || "false") === "true";
 
     const formatValue = formData.get("format");
     const normalizedFormat = String(formatValue || "docx").toLowerCase() as SupportedFormat;
@@ -146,17 +118,25 @@ export async function POST(request: Request): Promise<NextResponse> {
       data = JSON.parse(dataValue);
     } catch {
       return NextResponse.json(
-        { success: false, error: "data 参数格式错误，必须是有效的 JSON" },
+        {
+          success: false,
+          error: "data 参数格式错误，必须是有效的 JSON",
+          debug: debugMode ? { rawDataValue: dataValue } : undefined,
+        },
         { status: 400 }
       );
     }
 
     let templateBuffer: Buffer;
+    let templateSource = "";
+    let templateFieldValue = "";
 
     const templateFile = formData.get("template");
     if (templateFile instanceof File) {
       const ab = await templateFile.arrayBuffer();
       templateBuffer = Buffer.from(ab);
+      templateSource = "upload_file";
+      templateFieldValue = templateFile.name;
     } else {
       const templateField = formData.get("template_url") || formData.get("template");
 
@@ -167,6 +147,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         );
       }
 
+      templateFieldValue = templateField;
+      templateSource = "template_url";
       templateBuffer = await downloadTemplateAsBuffer(templateField);
     }
 
@@ -210,9 +192,21 @@ export async function POST(request: Request): Promise<NextResponse> {
       file_name: fileName,
       format: normalizedFormat,
       content_type: handler.contentType,
+      debug: debugMode
+        ? {
+            rawDataValue: dataValue,
+            parsedData: data,
+            templateSource,
+            templateFieldValue,
+            templateBufferLength: templateBuffer.length,
+            docBufferLength: docBuffer.length,
+            processedBufferLength: processedBuffer.length,
+            generatedFileName: fileName,
+            blobUrl: blob.url,
+          }
+        : undefined,
     });
   } catch (error: any) {
-    console.error("文档生成失败:", error);
     return NextResponse.json(
       {
         success: false,
