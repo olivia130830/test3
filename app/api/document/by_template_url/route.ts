@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 import { convertDocxToPdf } from "@/services/pdfConverter";
 import { convertDocxToImage } from "@/services/imageConverter";
 import { generateDocxBuffer, type DocumentData } from "@/services/docxTemplateService";
@@ -100,7 +99,6 @@ const formatHandlers: Record<SupportedFormat, FormatHandler> = {
 export async function POST(request: Request): Promise<NextResponse> {
   try {
     const formData = await request.formData();
-    const debugMode = String(formData.get("debug") || "false") === "true";
 
     const formatValue = formData.get("format");
     const normalizedFormat = String(formatValue || "docx").toLowerCase() as SupportedFormat;
@@ -118,25 +116,17 @@ export async function POST(request: Request): Promise<NextResponse> {
       data = JSON.parse(dataValue);
     } catch {
       return NextResponse.json(
-        {
-          success: false,
-          error: "data 参数格式错误，必须是有效的 JSON",
-          debug: debugMode ? { rawDataValue: dataValue } : undefined,
-        },
+        { success: false, error: "data 参数格式错误，必须是有效的 JSON" },
         { status: 400 }
       );
     }
 
     let templateBuffer: Buffer;
-    let templateSource = "";
-    let templateFieldValue = "";
 
     const templateFile = formData.get("template");
     if (templateFile instanceof File) {
       const ab = await templateFile.arrayBuffer();
       templateBuffer = Buffer.from(ab);
-      templateSource = "upload_file";
-      templateFieldValue = templateFile.name;
     } else {
       const templateField = formData.get("template_url") || formData.get("template");
 
@@ -147,8 +137,6 @@ export async function POST(request: Request): Promise<NextResponse> {
         );
       }
 
-      templateFieldValue = templateField;
-      templateSource = "template_url";
       templateBuffer = await downloadTemplateAsBuffer(templateField);
     }
 
@@ -168,43 +156,12 @@ export async function POST(request: Request): Promise<NextResponse> {
     const processedBuffer = await handler.process(docBuffer);
     const fileName = createFileName(normalizedFormat);
 
-    const token = process.env.BLOB_READ_WRITE_TOKEN;
-    if (!token) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "缺少 BLOB_READ_WRITE_TOKEN 环境变量",
-        },
-        { status: 500 }
-      );
-    }
-
-    const blob = await put(fileName, processedBuffer, {
-      access: "public",
-      contentType: handler.contentType,
-      token,
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: "文档生成成功",
-      file_url: blob.url,
-      file_name: fileName,
-      format: normalizedFormat,
-      content_type: handler.contentType,
-      debug: debugMode
-        ? {
-            rawDataValue: dataValue,
-            parsedData: data,
-            templateSource,
-            templateFieldValue,
-            templateBufferLength: templateBuffer.length,
-            docBufferLength: docBuffer.length,
-            processedBufferLength: processedBuffer.length,
-            generatedFileName: fileName,
-            blobUrl: blob.url,
-          }
-        : undefined,
+    return new NextResponse(new Uint8Array(processedBuffer), {
+      status: 200,
+      headers: {
+        "Content-Type": handler.contentType,
+        "Content-Disposition": `attachment; filename="${encodeURIComponent(fileName)}"`,
+      },
     });
   } catch (error: any) {
     return NextResponse.json(
