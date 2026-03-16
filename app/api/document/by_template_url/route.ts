@@ -185,26 +185,33 @@ export async function POST(request: Request): Promise<NextResponse> {
       token,
     });
 
-    return NextResponse.json({
-      success: true,
-      message: "文档生成成功",
-      file_url: blob.url,
-      file_name: fileName,
-      format: normalizedFormat,
-      content_type: handler.contentType,
-      debug: debugMode
-        ? {
-            rawDataValue: dataValue,
-            parsedData: data,
-            templateSource,
-            templateFieldValue,
-            templateBufferLength: templateBuffer.length,
-            docBufferLength: docBuffer.length,
-            processedBufferLength: processedBuffer.length,
-            generatedFileName: fileName,
-            blobUrl: blob.url,
-          }
-        : undefined,
+    if (debugMode) {
+      return NextResponse.json({
+        success: true,
+        message: "文档生成成功",
+        file_url: blob.url,
+        file_name: fileName,
+        format: normalizedFormat,
+        content_type: handler.contentType,
+        debug: {
+          rawDataValue: dataValue,
+          parsedData: data,
+          templateSource,
+          templateFieldValue,
+          templateBufferLength: templateBuffer.length,
+          docBufferLength: docBuffer.length,
+          processedBufferLength: processedBuffer.length,
+          generatedFileName: fileName,
+          blobUrl: blob.url,
+        },
+      });
+    }
+
+    return new NextResponse(blob.url, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+      },
     });
   } catch (error: any) {
     return NextResponse.json(
