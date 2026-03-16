@@ -108,7 +108,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const dataValue = formData.get("data");
     if (!dataValue || typeof dataValue !== "string") {
       return NextResponse.json(
-        { success: false, error: "缺少 data 参数" },
+        { error: "缺少 data 参数" },
         { status: 400 }
       );
     }
@@ -119,7 +119,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     } catch {
       return NextResponse.json(
         {
-          success: false,
           error: "data 参数格式错误，必须是有效的 JSON",
           debug: debugMode ? { rawDataValue: dataValue } : undefined,
         },
@@ -142,7 +141,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
       if (!templateField || typeof templateField !== "string") {
         return NextResponse.json(
-          { success: false, error: "缺少模板：请上传 template 文件或传 template_url" },
+          { error: "缺少模板：请上传 template 文件或传 template_url" },
           { status: 400 }
         );
       }
@@ -155,7 +154,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     if (!formatHandlers[normalizedFormat]) {
       return NextResponse.json(
         {
-          success: false,
           error: `不支持的格式: ${normalizedFormat}`,
           supportedFormats: Object.keys(formatHandlers),
         },
@@ -171,10 +169,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     const token = process.env.BLOB_READ_WRITE_TOKEN;
     if (!token) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "缺少 BLOB_READ_WRITE_TOKEN 环境变量",
-        },
+        { error: "缺少 BLOB_READ_WRITE_TOKEN 环境变量" },
         { status: 500 }
       );
     }
@@ -187,12 +182,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
     if (debugMode) {
       return NextResponse.json({
-        success: true,
-        message: "文档生成成功",
-        file_url: blob.url,
-        file_name: fileName,
-        format: normalizedFormat,
-        content_type: handler.contentType,
+        url: blob.url,
         debug: {
           rawDataValue: dataValue,
           parsedData: data,
@@ -207,16 +197,12 @@ export async function POST(request: Request): Promise<NextResponse> {
       });
     }
 
-    return new NextResponse(blob.url, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-      },
+    return NextResponse.json({
+      url: blob.url,
     });
   } catch (error: any) {
     return NextResponse.json(
       {
-        success: false,
         error: "文档生成失败",
         detail: error?.message || String(error),
       },
