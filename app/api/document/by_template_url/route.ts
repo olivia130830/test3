@@ -198,7 +198,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     return NextResponse.json({
-      url: blob.url,
+      file_url: blob.url,
     });
   } catch (error: any) {
     return NextResponse.json(
